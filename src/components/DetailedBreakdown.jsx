@@ -79,10 +79,10 @@ export default function DetailedBreakdown({ inputs, benchmarks, gaps, contradict
   // Gap 1: Revenue Not Captured
   if (gaps.gap1) {
     let driver;
-    if (inputs.fillRate != null && inputs.fillRate < 94) {
+    if (inputs.fillRate != null && inputs.fillRate !== '' && inputs.fillRate < 94) {
       driver = `Fill rate at ${inputs.fillRate}% — below typical. Lost sales are likely material.`;
-    } else if (inputs.fillRate != null && inputs.fillRate > 96) {
-      driver = 'Service level is high. Estimate is conservative, based on industry residual stockout patterns.';
+    } else if (inputs.fillRate != null && inputs.fillRate !== '' && inputs.fillRate > 96) {
+      driver = `Service level is high at ${inputs.fillRate}%. Estimate is conservative, based on industry residual stockout patterns.`;
     } else {
       driver = `Based on ${industryLabel.toLowerCase()} average lost sales rate of ${(gaps.gap1.lostSalesRate * 100).toFixed(1)}%.`;
     }

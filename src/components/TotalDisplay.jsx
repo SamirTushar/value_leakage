@@ -1,17 +1,12 @@
-import { getDiagnosticState } from '../logic/sequencing';
 import { formatCr, formatPct } from '../utils/formatCurrency';
 
-export default function TotalDisplay({ inputs, total, totalPctOfRevenue, onViewBreakdown }) {
-  const state = getDiagnosticState(inputs);
-
-  if (state < 2) {
-    return null;
-  }
-
-  if (state === 2) {
+export default function TotalDisplay({ total, totalPctOfRevenue, hasDIO, onViewBreakdown }) {
+  // Before enough data
+  if (!hasDIO) {
     return (
-      <div className="bg-white rounded-xl border border-gray-200 p-6 text-center">
-        <p className="text-sm text-gray-500">Enter DIO to size the first gap.</p>
+      <div className="bg-white rounded-lg border border-gray-200 p-6 text-center">
+        <p className="text-3xl font-bold text-gray-200 mb-1">₹ —</p>
+        <p className="text-xs text-gray-400">Enter DIO to size the first gap</p>
       </div>
     );
   }
@@ -19,24 +14,21 @@ export default function TotalDisplay({ inputs, total, totalPctOfRevenue, onViewB
   if (total == null) return null;
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6 text-center">
-      <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">
-        Total Value Leakage
-      </p>
-      <p className="text-4xl font-bold text-gray-900">
+    <div className="bg-white rounded-lg border border-gray-200 p-6 text-center">
+      <p className="text-5xl font-bold text-teal-700 mb-1">
         {formatCr(total)}
-        <span className="text-lg font-normal text-gray-400">/year</span>
       </p>
+      <p className="text-sm text-gray-400 mb-0.5">estimated annual value leakage</p>
       {totalPctOfRevenue != null && (
-        <p className="text-sm text-gray-500 mt-1">
+        <p className="text-sm text-gray-400">
           {formatPct(totalPctOfRevenue)} of revenue
         </p>
       )}
       <button
         onClick={onViewBreakdown}
-        className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-teal-600 hover:text-teal-700 transition-colors cursor-pointer"
+        className="mt-4 text-sm font-medium text-teal-600 hover:text-teal-700 transition-colors cursor-pointer"
       >
-        View Detailed Breakdown →
+        View Breakdown →
       </button>
     </div>
   );

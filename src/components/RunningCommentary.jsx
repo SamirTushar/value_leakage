@@ -1,145 +1,163 @@
-import { getDiagnosticState } from '../logic/sequencing';
 import { formatCr } from '../utils/formatCurrency';
 
 export default function RunningCommentary({ inputs, benchmarks, contradictions, gaps }) {
-  const state = getDiagnosticState(inputs);
   const b = benchmarks;
+  if (!b) return null;
 
-  if (state === 0) {
-    return (
-      <CommentaryCard>
-        <p className="text-gray-500 italic">Select an industry and enter revenue to begin the diagnostic.</p>
-      </CommentaryCard>
+  const { revenue, adjustedAccuracy, reportedAccuracy, accuracyLevel, dio, fillRate, expeditedFreight, industryLabel, companyName } = inputs;
+  const name = companyName || 'This company';
+  const hasRevenue = revenue != null;
+  const hasAccuracy = reportedAccuracy != null && reportedAccuracy !== '';
+  const hasDIO = dio != null && dio !== '';
+  const hasFillRate = fillRate != null && fillRate !== '';
+  const hasExpedited = expeditedFreight != null && expeditedFreight !== '';
+
+  if (!hasRevenue) return null;
+
+  const paragraphs = [];
+
+  // State 1: Revenue known
+  paragraphs.push(
+    `${name} has ${formatCr(revenue)} in revenue (${industryLabel}). To understand where value is leaking, we need to know how accurate their planning is — that's the upstream driver of everything else.`
+  );
+
+  // State 2: Accuracy
+  if (hasAccuracy && adjustedAccuracy != null) {
+    const bestMAPE = b.bestInClassMAPE.value;
+    const gapToBest = (adjustedAccuracy - bestMAPE).toFixed(0);
+
+    if (adjustedAccuracy < 50) {
+      paragraphs.push(
+        `Forecast accuracy at ${adjustedAccuracy.toFixed(0)}% is ${gapToBest} points below ${industryLabel} best-in-class of ${bestMAPE}%. This means roughly half the time, the plan is materially wrong. The cost of that shows up in inventory — stock buffers compensate for what the forecast misses. If you know their inventory value or DIO, we can size that cost.`
+      );
+    } else if (adjustedAccuracy <= 65) {
+      paragraphs.push(
+        `Accuracy at ${adjustedAccuracy.toFixed(0)}% is moderate — ${gapToBest} points off best-in-class of ${bestMAPE}%. There's room to improve and the downstream costs are real but not dramatic. Inventory data will tell us how much they're overcompensating.`
+      );
+    } else {
+      paragraphs.push(
+        `Accuracy at ${adjustedAccuracy.toFixed(0)}% is solid — only ${gapToBest} points from best-in-class of ${bestMAPE}%. If this is measured at SKU-week level, they're in the top tier. The value leakage here will be smaller and mostly in fine-tuning rather than structural gaps.`
+      );
+    }
+
+    if (accuracyLevel !== 'SKU-Week') {
+      paragraphs.push(
+        `Note: this ${reportedAccuracy}% is at ${accuracyLevel} level. At SKU-week — where replenishment and production decisions actually happen — accuracy is typically around ${adjustedAccuracy.toFixed(0)}%. That's the number that matters.`
+      );
+    }
+  }
+
+  // State 3: DIO
+  if (hasDIO) {
+    const medianDIO = b.medianDIO.value;
+    const excessDays = dio - medianDIO;
+
+    if (excessDays > 0) {
+      const excessInv = gaps.gap3?.excessInventory;
+      const carryingCost = gaps.gap3?.value;
+
+      let dioText = `DIO at ${dio} days puts them ${excessDays} days above the ${industryLabel} median of ${medianDIO} days.`;
+      if (excessInv != null) {
+        dioText += ` That's ${formatCr(excessInv)} in inventory above what peers carry. At ${(b.carryingCostRate.value * 100).toFixed(0)}% carrying cost, that's ${formatCr(carryingCost)}/year in trapped capital.`;
+      }
+      paragraphs.push(dioText);
+
+      if (hasAccuracy && adjustedAccuracy < 50) {
+        paragraphs.push(
+          `With accuracy at ${adjustedAccuracy.toFixed(0)}%, this excess is almost certainly safety stock — the planning gap forces inventory to compensate. The money isn't in "reducing inventory" generically. It's in making the forecast good enough that you don't need the buffer.`
+        );
+      }
+    } else {
+      paragraphs.push(
+        `DIO at ${dio} days is at or below ${industryLabel} median of ${medianDIO} days. Inventory efficiency isn't the issue here. The leakage is elsewhere — likely in freight costs or lost sales.`
+      );
+    }
+  }
+
+  // State 4: Fill Rate — the core contradiction logic
+  if (hasFillRate) {
+    const medianDIO = b.medianDIO.value;
+    const excessDays = dio ? dio - medianDIO : 0;
+    const typicalFill = b.typicalFillRate.value;
+    const estGap2 = gaps.gap2?.value;
+
+    if (fillRate > 97 && adjustedAccuracy != null && adjustedAccuracy <= 45) {
+      // Very high fill + very low accuracy
+      paragraphs.push(
+        `Here's the contradiction: ${fillRate}% fill rate on ${adjustedAccuracy.toFixed(0)}% accuracy. Those numbers don't add up unless something expensive is in between.${
+          gaps.gap3 ? ` We already sized the inventory buffer at ${formatCr(gaps.gap3.value)}/year.` : ''
+        } The other bridge is premium freight — if you know roughly what they spend on expedited shipments, we can size that too.${
+          estGap2 ? ` If not, industry pattern suggests around ${formatCr(estGap2)}.` : ''
+        }`
+      );
+    } else if (fillRate >= 95 && fillRate <= 97 && adjustedAccuracy != null && adjustedAccuracy <= 45) {
+      // Solid fill + low accuracy
+      paragraphs.push(
+        `Service at ${fillRate}% is solid but accuracy at ${adjustedAccuracy.toFixed(0)}% can't support it alone.${
+          hasDIO && excessDays > 0
+            ? ` The buffer is in your inventory — the DIO number above (${excessDays} days above median) confirms it.`
+            : ' The buffer is likely in excess inventory and freight costs.'
+        }`
+      );
+    } else if (fillRate >= 91 && fillRate <= 94 && adjustedAccuracy != null && adjustedAccuracy < 50) {
+      // Slipping fill + low accuracy
+      paragraphs.push(
+        `Service at ${fillRate}% is already slipping${hasDIO ? ` despite ${dio} days of inventory` : ''}. Accuracy at ${adjustedAccuracy.toFixed(0)}% means the stock isn't positioned where demand actually is.`
+      );
+    } else if (fillRate > 97 && adjustedAccuracy != null && adjustedAccuracy >= 50 && adjustedAccuracy <= 65) {
+      // High fill + moderate accuracy
+      paragraphs.push(
+        `Fill rate is strong at ${fillRate}%. Accuracy at ${adjustedAccuracy.toFixed(0)}% has room to improve — but the compensation cost is moderate. The question is whether they're overpaying for this service level.`
+      );
+    } else if (fillRate < 90) {
+      // Very low fill
+      paragraphs.push(
+        `Service at ${fillRate}% is below ${industryLabel} typical of ${typicalFill}%. This is where lost revenue becomes real — not just a benchmark estimate.${
+          hasDIO && dio > medianDIO
+            ? ` And with DIO at ${dio} days (above median), they're carrying more stock than peers and still not serving customers well. That usually means the wrong products in the wrong places. The cost is double: trapped capital AND lost revenue from stockouts.`
+            : ''
+        }`
+      );
+    } else if (fillRate >= 90 && fillRate <= 94 && hasDIO && dio > medianDIO) {
+      // Below-average fill + high DIO — Rule 3
+      paragraphs.push(
+        `Fill rate at ${fillRate}% is below ${industryLabel} typical of ${typicalFill}%. But DIO is ${dio} days — ${excessDays > 0 ? `${excessDays} days above` : 'near'} median. They're carrying more stock than peers and still not serving customers well. That usually means the wrong products in the wrong places.`
+      );
+    } else if (fillRate > 94 && adjustedAccuracy != null && adjustedAccuracy > 65) {
+      // Good metrics overall
+      paragraphs.push(
+        `Fill rate at ${fillRate}% with accuracy at ${adjustedAccuracy.toFixed(0)}% — this is a healthy combination.${
+          hasDIO && excessDays > 0
+            ? ` There's still ${formatCr(gaps.gap3?.value)}/year in carrying cost from the ${excessDays}-day DIO gap, but the opportunity is in fine-tuning, not structural change.`
+            : ' The opportunity is in closing the gap to best-in-class.'
+        }`
+      );
+    } else {
+      // Default with numbers
+      paragraphs.push(
+        `Fill rate at ${fillRate}% with${hasAccuracy ? ` accuracy at ${adjustedAccuracy.toFixed(0)}%` : ' accuracy unknown'}.${
+          hasDIO ? ` DIO at ${dio} days.` : ''
+        } See the detailed breakdown for the full cost sizing.`
+      );
+    }
+  }
+
+  // State 5: Expedited freight
+  if (hasExpedited) {
+    paragraphs.push(
+      `Expedited freight at ${formatCr(expeditedFreight)}/year — now we know. That's the premium being paid to keep service at ${fillRate ?? 'current'}%${hasAccuracy ? ` when planning accuracy at ${adjustedAccuracy.toFixed(0)}% can't support it` : ''}. This replaces our estimate with a hard number.`
     );
   }
 
-  const industryLabel = inputs.industryLabel || 'Industry';
-
   return (
-    <CommentaryCard>
-      {/* What we know so far */}
-      {state >= 1 && (
-        <p className="text-sm text-gray-700 mb-3">
-          Revenue: {formatCr(inputs.revenue)} ({industryLabel})
-        </p>
-      )}
-
-      {state >= 2 && inputs.adjustedAccuracy != null && (
-        <div className="mb-3">
-          <p className="text-sm text-gray-700">
-            Forecast accuracy: {inputs.adjustedAccuracy.toFixed(0)}%
-            {inputs.accuracyLevel !== 'SKU-Week' && ` at ${inputs.accuracyLevel} (adjusted to SKU-week)`}
-            . {industryLabel} best-in-class: {b.bestInClassMAPE.value}%. Gap: {(inputs.adjustedAccuracy - b.bestInClassMAPE.value).toFixed(0)} points.
+    <div className="bg-gray-50 rounded-lg border border-gray-200 p-5">
+      <div className="prose prose-sm max-w-none">
+        {paragraphs.map((p, i) => (
+          <p key={i} className="text-sm text-gray-700 leading-relaxed mb-3 last:mb-0">
+            {p}
           </p>
-          {inputs.accuracyLevel !== 'SKU-Week' && (
-            <p className="text-xs text-gray-500 mt-1">
-              Reported at {inputs.accuracyLevel} level. At SKU-week where decisions happen, estimated accuracy is ~{inputs.adjustedAccuracy.toFixed(0)}%.
-            </p>
-          )}
-        </div>
-      )}
-
-      {state >= 3 && inputs.dio != null && (
-        <div className="mb-3">
-          <p className="text-sm text-gray-700">
-            DIO: {inputs.dio} days. {industryLabel} median: {b.medianDIO.value} days.
-            {inputs.dio > b.medianDIO.value && (
-              <strong> {(inputs.dio - b.medianDIO.value).toFixed(0)} days above median.</strong>
-            )}
-          </p>
-          {gaps.gap3 && gaps.gap3.excessInventory > 0 && (
-            <p className="text-sm text-gray-700 mt-1">
-              Excess inventory: {formatCr(gaps.gap3.excessInventory)}. Carrying cost: {formatCr(gaps.gap3.value)}/year.
-            </p>
-          )}
-          {inputs.dio > b.medianDIO.value && inputs.adjustedAccuracy != null && (
-            <p className="text-xs text-gray-500 mt-1">
-              Your inventory is {(inputs.dio - b.medianDIO.value).toFixed(0)} days above {industryLabel.toLowerCase()} median. With forecast accuracy at {inputs.adjustedAccuracy.toFixed(0)}%, this excess is likely safety stock compensating for forecast uncertainty.
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* Contradiction banners */}
-      {contradictions.length > 0 && contradictions[0].type !== 'metrics_ok' && (
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-3">
-          <p className="text-sm text-amber-800 font-medium">
-            ⚠ {contradictions[0].text}
-          </p>
-        </div>
-      )}
-
-      {contradictions.length > 0 && contradictions[0].type === 'metrics_ok' && (
-        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 mb-3">
-          <p className="text-sm text-emerald-700">{contradictions[0].text}</p>
-        </div>
-      )}
-
-      {contradictions.length > 0 && contradictions[0].type === 'low_fill_high_dio' && (
-        <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-3">
-          <p className="text-xs text-gray-600">
-            <strong>Insight for the prospect:</strong> "You're holding more inventory than peers but serving customers worse. The issue isn't how much stock — it's which stock and where."
-          </p>
-        </div>
-      )}
-
-      {/* Ask next prompts */}
-      {state === 1 && (
-        <AskNext
-          prompt={'Ask next: "What is your forecast accuracy at SKU level? If they don\'t measure it, ask: how confident are you in your demand forecasts — would you say they\'re right more than half the time?"'}
-          why="Forecast accuracy is the upstream driver of all supply chain costs. It determines how much the rest of the chain has to compensate."
-        />
-      )}
-
-      {state === 2 && (
-        <AskNext
-          prompt={`Ask next: "How many days of inventory do you carry? Or: what's your inventory value?"${
-            inputs.companyType === 'Listed' ? ' For listed companies, this is available from financials.' : ''
-          }`}
-          why={`With accuracy at ${inputs.adjustedAccuracy?.toFixed(0) ?? '—'}%, inventory is where the cost shows up first. DIO will tell us how much capital is being used to compensate.`}
-        />
-      )}
-
-      {state === 3 && (
-        <AskNext
-          prompt={'Ask next: "What\'s your fill rate or service level? High 90s, mid 90s?"'}
-          why="If fill rate is high despite low accuracy, you're buying service with inventory dollars and freight dollars. If fill rate is also low, you're holding the wrong stock."
-        />
-      )}
-
-      {state === 4 && contradictions.some(c => c.id === 1) && (
-        <AskNext
-          prompt={'Ask next: "Do you know roughly what you spend on expedited or premium freight per year? Even a ballpark helps."'}
-          why="This is the hidden cost of maintaining service without planning accuracy. The freight number completes the picture."
-        />
-      )}
-
-      {state === 5 && (
-        <p className="text-sm text-gray-600 mt-2">
-          All inputs complete. See total below and detailed breakdown for full picture.
-        </p>
-      )}
-    </CommentaryCard>
-  );
-}
-
-function CommentaryCard({ children }) {
-  return (
-    <div className="bg-gray-50 rounded-xl border border-gray-200 p-5">
-      {children}
-    </div>
-  );
-}
-
-function AskNext({ prompt, why }) {
-  return (
-    <div className="mt-3">
-      <p className="text-sm text-teal-700 font-medium pl-4 border-l-2 border-teal-400">
-        → {prompt}
-      </p>
-      <p className="text-xs text-gray-400 mt-2 pl-4">
-        Why this matters: {why}
-      </p>
+        ))}
+      </div>
     </div>
   );
 }

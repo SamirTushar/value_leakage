@@ -29,7 +29,6 @@ function App() {
   const [inputs, setInputs] = useState(INITIAL_INPUTS);
   const [overrides, setOverrides] = useState({});
 
-  // Merge benchmark defaults with overrides
   const benchmarks = useMemo(() => {
     if (!inputs.industry || !benchmarkData[inputs.industry]) return null;
     const base = benchmarkData[inputs.industry].benchmarks;
@@ -44,50 +43,62 @@ function App() {
 
   const industryLabel = inputs.industry ? benchmarkData[inputs.industry]?.label : '';
 
-  // Compute adjusted accuracy
+  // Adjusted accuracy
   const adjustedAccuracyVal = useMemo(() => {
     if (inputs.reportedAccuracy != null && inputs.reportedAccuracy !== '') {
       return adjustAccuracy(Number(inputs.reportedAccuracy), inputs.accuracyLevel);
     }
+    // Fallback to industry typical for calculations only
     if (benchmarks) return benchmarks.typicalMAPE.value;
     return null;
   }, [inputs.reportedAccuracy, inputs.accuracyLevel, benchmarks]);
 
-  // Effective inputs for calculations
+  // Effective inputs: auto-fill COGS for unlisted, but NO prefilled diagnostic values
   const effectiveInputs = useMemo(() => {
-    if (!benchmarks) return inputs;
+    if (!benchmarks) return { ...inputs, industryLabel };
 
+    // Auto-COGS for unlisted
     let effectiveCOGS = inputs.cogs;
     if ((effectiveCOGS == null || effectiveCOGS === '') && inputs.revenue && inputs.companyType === 'Unlisted') {
       effectiveCOGS = inputs.revenue * (1 - benchmarks.grossMargin.value);
     }
 
+    // Auto-DIO from inventory value
     let effectiveDIO = inputs.dio;
-    if ((effectiveDIO == null || effectiveDIO === '') && inputs.companyType === 'Unlisted') {
-      effectiveDIO = Math.round(benchmarks.medianDIO.value * 1.15);
+    if ((effectiveDIO == null || effectiveDIO === '') && inputs.inventoryValue && effectiveCOGS) {
+      effectiveDIO = Math.round((inputs.inventoryValue / effectiveCOGS) * 365);
     }
-
-    const effectiveFillRate = inputs.fillRate ?? benchmarks.typicalFillRate.value;
 
     return {
       ...inputs,
       cogs: effectiveCOGS != null ? Number(effectiveCOGS) : null,
       dio: effectiveDIO != null ? Number(effectiveDIO) : null,
-      fillRate: effectiveFillRate != null ? Number(effectiveFillRate) : null,
+      // fillRate stays as-is — NO prefill. Null means "not entered".
+      fillRate: inputs.fillRate != null ? Number(inputs.fillRate) : null,
       adjustedAccuracy: adjustedAccuracyVal,
       industryLabel,
     };
   }, [inputs, benchmarks, adjustedAccuracyVal, industryLabel]);
 
-  // Calculate gaps
-  const gaps = useMemo(() => {
-    if (!benchmarks || !effectiveInputs.revenue) return {};
-    return calculateAll(effectiveInputs, benchmarks);
+  // For calculations, use benchmark fallbacks where user hasn't entered values
+  const calcInputs = useMemo(() => {
+    if (!benchmarks) return effectiveInputs;
+    return {
+      ...effectiveInputs,
+      // Use benchmark fill rate only for gap calculations, not for display
+      fillRate: effectiveInputs.fillRate ?? benchmarks.typicalFillRate.value,
+    };
   }, [effectiveInputs, benchmarks]);
 
-  // Detect contradictions
+  const gaps = useMemo(() => {
+    if (!benchmarks || !calcInputs.revenue) return {};
+    return calculateAll(calcInputs, benchmarks);
+  }, [calcInputs, benchmarks]);
+
   const contradictions = useMemo(() => {
     if (!benchmarks) return [];
+    // Only detect contradictions when user has actually entered fill rate
+    if (effectiveInputs.fillRate == null) return [];
     return detectContradictions(effectiveInputs, benchmarks);
   }, [effectiveInputs, benchmarks]);
 
@@ -122,12 +133,15 @@ function App() {
     { id: 'assumptions', label: 'Assumptions' },
   ];
 
+  const hasDIO = effectiveInputs.dio != null && effectiveInputs.dio !== '';
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Header
         companyName={inputs.companyName}
         companyType={inputs.companyType}
         industry={inputs.industry}
+        revenue={inputs.revenue}
         onUpdate={handleUpdate}
       />
 
@@ -152,12 +166,11 @@ function App() {
       </div>
 
       {view === 'diagnostic' && (
-        <div className="max-w-4xl mx-auto px-6 py-8 space-y-6">
+        <div className="max-w-4xl mx-auto px-6 py-6 space-y-5">
           <InputSection
             inputs={effectiveInputs}
             benchmarks={benchmarks}
             onUpdate={handleUpdate}
-            contradictions={contradictions}
           />
           <RunningCommentary
             inputs={effectiveInputs}
@@ -166,9 +179,9 @@ function App() {
             gaps={gaps}
           />
           <TotalDisplay
-            inputs={effectiveInputs}
             total={gaps.total}
             totalPctOfRevenue={gaps.totalPctOfRevenue}
+            hasDIO={hasDIO}
             onViewBreakdown={() => setView('breakdown')}
           />
         </div>

@@ -1,193 +1,341 @@
-import InputCard from './InputCard';
 import { ACCURACY_LEVELS, adjustAccuracy } from '../logic/adjustments';
-import { getInputStates } from '../logic/sequencing';
 import { formatCr } from '../utils/formatCurrency';
+import BenchmarkBar from './BenchmarkBar';
 
-export default function InputSection({ inputs, benchmarks, onUpdate, contradictions }) {
-  const states = getInputStates(inputs);
+export default function InputSection({ inputs, benchmarks, onUpdate }) {
   const b = benchmarks;
+  const hasRevenue = inputs.revenue != null && inputs.revenue !== '';
+  const isListed = inputs.companyType === 'Listed';
 
   const adjustedMAPE = inputs.reportedAccuracy != null && inputs.reportedAccuracy !== ''
     ? adjustAccuracy(Number(inputs.reportedAccuracy), inputs.accuracyLevel)
     : null;
 
-  // Auto-calculate COGS for unlisted companies
-  const autoFilledCOGS = inputs.companyType === 'Unlisted' && inputs.revenue && b
-    ? (inputs.revenue * (1 - b.grossMargin.value)).toFixed(1)
+  // Auto-calculate COGS for unlisted
+  const autoCOGS = !isListed && hasRevenue && b
+    ? Number((inputs.revenue * (1 - b.grossMargin.value)).toFixed(1))
     : null;
 
-  // Contradiction Rule 1 highlight for expedited freight card
-  const rule1Fired = contradictions.some(c => c.id === 1);
+  // Effective COGS for DIO auto-calc
+  const effectiveCOGS = inputs.cogs ?? autoCOGS;
+
+  // Auto-calculated DIO from inventory
+  const autoDIO = inputs.inventoryValue && effectiveCOGS
+    ? Math.round((inputs.inventoryValue / effectiveCOGS) * 365)
+    : null;
+
+  const displayDIO = inputs.dio ?? autoDIO;
+
+  if (!hasRevenue || !inputs.industry) {
+    return null;
+  }
 
   return (
-    <div className="space-y-4">
-      {/* Revenue */}
-      <InputCard
-        status={states.revenue}
-        label="Revenue (₹ Cr)"
-        infoText="Annual revenue from latest financials. For listed companies, use Screener.in or annual report."
-      >
-        <input
-          type="number"
-          value={inputs.revenue ?? ''}
-          onChange={(e) => onUpdate({ revenue: e.target.value ? Number(e.target.value) : null })}
-          placeholder="e.g. 9764"
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
-        />
-      </InputCard>
-
-      {/* COGS */}
-      <InputCard
-        status={inputs.cogs != null && inputs.cogs !== '' ? 'entered' : (inputs.revenue ? 'next' : 'later')}
-        label="COGS (₹ Cr)"
-        infoText="Cost of Goods Sold. For unlisted companies, we estimate this from industry gross margin benchmarks."
-        feedbackText={
-          inputs.companyType === 'Unlisted' && autoFilledCOGS && (inputs.cogs == null || inputs.cogs === '')
-            ? `Estimated from ${benchmarks?.label || 'industry'} gross margin of ${(b.grossMargin.value * 100).toFixed(0)}%`
-            : null
-        }
-      >
-        <input
-          type="number"
-          value={inputs.cogs ?? (autoFilledCOGS || '')}
-          onChange={(e) => onUpdate({ cogs: e.target.value ? Number(e.target.value) : null })}
-          placeholder={inputs.companyType === 'Listed' ? 'e.g. 5956' : 'Auto-estimated if blank'}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
-        />
-      </InputCard>
-
-      {/* Forecast Accuracy */}
-      <InputCard
-        status={states.accuracy}
-        label="Forecast Accuracy (MAPE %)"
-        infoText="Mean Absolute Percentage Error — how far off your demand forecast is from actual demand, on average. Lower is better. If you don't measure this, leave blank and we'll use the industry average."
-        benchmarkText={b ? `Industry typical: ${b.typicalMAPE.value}%. Best-in-class: ${b.bestInClassMAPE.value}%.` : null}
-        feedbackText={
-          adjustedMAPE != null && inputs.accuracyLevel !== 'SKU-Week'
-            ? `At SKU-week level, this is approximately ${adjustedMAPE.toFixed(0)}%${adjustedMAPE >= 100 ? ' — effectively no better than naive methods.' : '.'}`
-            : inputs.reportedAccuracy == null || inputs.reportedAccuracy === ''
-            ? (b ? `Using industry average of ${b.typicalMAPE.value}%.` : null)
-            : null
-        }
-        feedbackType={adjustedMAPE != null && adjustedMAPE >= 100 ? 'warning' : undefined}
-      >
-        <div className="flex gap-3">
-          <input
-            type="number"
-            min="0"
-            max="100"
-            value={inputs.reportedAccuracy ?? ''}
-            onChange={(e) => onUpdate({ reportedAccuracy: e.target.value ? Number(e.target.value) : null })}
-            placeholder="e.g. 45"
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
-          />
-        </div>
-        {inputs.reportedAccuracy != null && inputs.reportedAccuracy !== '' && (
-          <div className="mt-2">
-            <label className="text-xs text-gray-500 mb-1 block">Measured at:</label>
-            <select
-              value={inputs.accuracyLevel}
-              onChange={(e) => onUpdate({ accuracyLevel: e.target.value })}
-              className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 bg-white cursor-pointer"
+    <div className="space-y-5">
+      {/* Financials Group */}
+      <Section title="Financials">
+        {isListed ? (
+          <div className="grid grid-cols-3 gap-4">
+            <CompactField
+              label="COGS (₹ Cr)"
+              helper="Cost of Goods Sold — from the P&L. Needed to calculate daily inventory cost."
             >
-              {ACCURACY_LEVELS.map((level) => (
-                <option key={level} value={level}>{level}</option>
-              ))}
-            </select>
+              <input
+                type="number"
+                value={inputs.cogs ?? ''}
+                onChange={(e) => onUpdate({ cogs: e.target.value ? Number(e.target.value) : null })}
+                placeholder="e.g. 5956"
+                className="input-field w-full"
+              />
+            </CompactField>
+
+            <CompactField
+              label="Inventory (₹ Cr)"
+              helper="Total inventory on balance sheet. We'll calculate DIO from this."
+            >
+              <input
+                type="number"
+                value={inputs.inventoryValue ?? ''}
+                onChange={(e) => {
+                  const val = e.target.value ? Number(e.target.value) : null;
+                  const cogs = inputs.cogs;
+                  const updates = { inventoryValue: val };
+                  if (val != null && cogs) {
+                    updates.dio = Math.round((val / cogs) * 365);
+                  } else if (val == null) {
+                    // Only clear auto-calculated DIO, not manually entered
+                    if (autoDIO != null) updates.dio = null;
+                  }
+                  onUpdate(updates);
+                }}
+                placeholder="e.g. 1271"
+                className="input-field w-full"
+              />
+            </CompactField>
+
+            <CompactField
+              label="DIO (days)"
+              helper="Days your inventory could cover sales. Auto-calculated if you entered inventory above."
+            >
+              <input
+                type="number"
+                value={displayDIO ?? ''}
+                onChange={(e) => onUpdate({ dio: e.target.value ? Number(e.target.value) : null })}
+                placeholder={autoDIO != null ? `${autoDIO} (calculated)` : 'e.g. 78'}
+                className="input-field w-full"
+              />
+              {b && displayDIO != null && (
+                <>
+                  <InlineBenchmark
+                    value={displayDIO}
+                    benchmarkLabel={inputs.industryLabel}
+                    median={b.medianDIO.value}
+                    best={b.bestInClassDIO.value}
+                    unit=" days"
+                    lowerIsBetter
+                  />
+                  <BenchmarkBar
+                    value={displayDIO}
+                    best={b.bestInClassDIO.value}
+                    typical={b.medianDIO.value}
+                    worst={Math.max(displayDIO * 1.3, b.medianDIO.value * 2)}
+                    unit=""
+                    lowerIsBetter
+                  />
+                </>
+              )}
+              {b && displayDIO == null && (
+                <p className="text-[10px] text-gray-400 mt-0.5">
+                  {inputs.industryLabel} median: {b.medianDIO.value} days · Best: {b.bestInClassDIO.value} days
+                </p>
+              )}
+            </CompactField>
+          </div>
+        ) : (
+          <div>
+            <p className="text-xs text-gray-500 mb-2">
+              We estimate COGS at {formatCr(autoCOGS)} based on {inputs.industryLabel} gross margin of {b ? (b.grossMargin.value * 100).toFixed(0) : '—'}%.
+              <button
+                onClick={() => {
+                  const val = prompt('Enter COGS (₹ Cr):', autoCOGS);
+                  if (val) onUpdate({ cogs: Number(val) });
+                }}
+                className="ml-1 text-teal-600 hover:underline cursor-pointer"
+              >
+                Edit if known
+              </button>
+            </p>
           </div>
         )}
-      </InputCard>
+      </Section>
 
-      {/* DIO */}
-      <InputCard
-        status={states.dio}
-        label="Days Inventory Outstanding (DIO)"
-        infoText="How many days of sales your inventory could cover. DIO = (Inventory ÷ COGS) × 365. Higher DIO means more cash locked in stock."
-        benchmarkText={b ? `${inputs.industryLabel || 'Industry'} median: ${b.medianDIO.value} days. Best-in-class: ${b.bestInClassDIO.value} days.` : null}
-        feedbackText={
-          inputs.dio != null && inputs.dio !== '' && b
-            ? inputs.dio > b.medianDIO.value
-              ? `${(inputs.dio - b.medianDIO.value).toFixed(0)} days above industry median`
-              : 'At or below industry median'
-            : inputs.companyType === 'Unlisted' && !inputs.dio
-            ? `Estimated at ${b ? Math.round(b.medianDIO.value * 1.15) : '—'} days (industry median + buffer). Refine if known.`
-            : null
-        }
-        feedbackType={
-          inputs.dio != null && inputs.dio !== '' && b
-            ? inputs.dio > b.medianDIO.value ? 'warning' : 'good'
-            : undefined
-        }
-      >
-        <div className="space-y-2">
-          <input
-            type="number"
-            value={inputs.dio ?? ''}
-            onChange={(e) => onUpdate({ dio: e.target.value ? Number(e.target.value) : null })}
-            placeholder="e.g. 78 (days)"
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
-          />
-          <div className="text-xs text-gray-400">
-            Or enter inventory value:
+      {/* Supply Chain Metrics Group */}
+      <Section title="Supply Chain Metrics">
+        <div className="space-y-3">
+          {/* Forecast Accuracy */}
+          <div className="flex items-start gap-4">
+            <div className="flex-1">
+              <div className="flex items-center gap-3">
+                <CompactField
+                  label="Forecast Accuracy (MAPE %)"
+                  helper="How far off demand forecasts are from actuals. Lower = better."
+                  className="flex-1"
+                >
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={inputs.reportedAccuracy ?? ''}
+                    onChange={(e) => onUpdate({ reportedAccuracy: e.target.value ? Number(e.target.value) : null })}
+                    placeholder={b ? `e.g. 45 (industry typical: ${b.typicalMAPE.value}%)` : 'e.g. 45'}
+                    className="input-field w-full"
+                  />
+                </CompactField>
+                {inputs.reportedAccuracy != null && inputs.reportedAccuracy !== '' && (
+                  <CompactField
+                    label="Level"
+                    helper="Level at which accuracy is measured. Aggregate numbers hide reality."
+                  >
+                    <select
+                      value={inputs.accuracyLevel}
+                      onChange={(e) => onUpdate({ accuracyLevel: e.target.value })}
+                      className="input-field cursor-pointer text-xs"
+                    >
+                      {ACCURACY_LEVELS.map((level) => (
+                        <option key={level} value={level}>{level}</option>
+                      ))}
+                    </select>
+                  </CompactField>
+                )}
+              </div>
+              {b && (
+                <div className="mt-1">
+                  {inputs.reportedAccuracy != null && inputs.reportedAccuracy !== '' ? (
+                    <>
+                      <InlineBenchmark
+                        value={adjustedMAPE ?? inputs.reportedAccuracy}
+                        benchmarkLabel={inputs.industryLabel}
+                        median={b.typicalMAPE.value}
+                        best={b.bestInClassMAPE.value}
+                        unit="%"
+                        lowerIsBetter
+                      />
+                      <BenchmarkBar
+                        value={adjustedMAPE ?? inputs.reportedAccuracy}
+                        best={b.bestInClassMAPE.value}
+                        typical={b.typicalMAPE.value}
+                        worst={100}
+                        unit="%"
+                        lowerIsBetter
+                      />
+                      {inputs.accuracyLevel !== 'SKU-Week' && adjustedMAPE != null && (
+                        <p className="text-[10px] text-amber-600 mt-0.5">
+                          At SKU-week level: ~{adjustedMAPE.toFixed(0)}%{adjustedMAPE >= 100 ? ' — effectively no better than guessing' : ''}
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-[10px] text-gray-400 mt-0.5">
+                      {inputs.industryLabel} typical: {b.typicalMAPE.value}% · Best-in-class: {b.bestInClassMAPE.value}%
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* DIO for unlisted (since listed gets it above in Financials) */}
+          {!isListed && (
+            <CompactField
+              label="Days Inventory Outstanding (DIO)"
+              helper="Days your inventory could cover sales. Higher = more cash locked."
+            >
+              <input
+                type="number"
+                value={inputs.dio ?? ''}
+                onChange={(e) => onUpdate({ dio: e.target.value ? Number(e.target.value) : null })}
+                placeholder={b ? `e.g. 78 (industry median: ${b.medianDIO.value})` : 'e.g. 78'}
+                className="input-field w-48"
+              />
+              {b && inputs.dio != null && inputs.dio !== '' && (
+                <>
+                  <InlineBenchmark
+                    value={inputs.dio}
+                    benchmarkLabel={inputs.industryLabel}
+                    median={b.medianDIO.value}
+                    best={b.bestInClassDIO.value}
+                    unit=" days"
+                    lowerIsBetter
+                  />
+                  <BenchmarkBar
+                    value={inputs.dio}
+                    best={b.bestInClassDIO.value}
+                    typical={b.medianDIO.value}
+                    worst={Math.max(inputs.dio * 1.3, b.medianDIO.value * 2)}
+                    unit=""
+                    lowerIsBetter
+                  />
+                </>
+              )}
+            </CompactField>
+          )}
+
+          {/* Fill Rate */}
+          <CompactField
+            label="Fill Rate / Service Level (%)"
+            helper="% of orders fulfilled on time and in full"
+          >
             <input
               type="number"
-              value={inputs.inventoryValue ?? ''}
-              onChange={(e) => {
-                const val = e.target.value ? Number(e.target.value) : null;
-                const effectiveCOGS = inputs.cogs || (autoFilledCOGS ? Number(autoFilledCOGS) : null);
-                if (val != null && effectiveCOGS) {
-                  onUpdate({ inventoryValue: val, dio: Math.round((val / effectiveCOGS) * 365) });
-                } else {
-                  onUpdate({ inventoryValue: val });
-                }
-              }}
-              placeholder="₹ Cr"
-              className="ml-2 w-28 px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+              min="0"
+              max="100"
+              value={inputs.fillRate ?? ''}
+              onChange={(e) => onUpdate({ fillRate: e.target.value ? Number(e.target.value) : null })}
+              placeholder={b ? `e.g. 96 (industry typical: ${b.typicalFillRate.value}%)` : 'e.g. 96'}
+              className="input-field w-48"
             />
-          </div>
+            {b && inputs.fillRate != null && inputs.fillRate !== '' && (
+              <>
+                <InlineBenchmark
+                  value={inputs.fillRate}
+                  benchmarkLabel={inputs.industryLabel}
+                  median={b.typicalFillRate.value}
+                  best={99}
+                  unit="%"
+                  lowerIsBetter={false}
+                />
+                <BenchmarkBar
+                  value={inputs.fillRate}
+                  best={99}
+                  typical={b.typicalFillRate.value}
+                  worst={85}
+                  unit="%"
+                  lowerIsBetter={false}
+                />
+              </>
+            )}
+          </CompactField>
+
+          {/* Expedited Freight */}
+          <CompactField
+            label="Expedited Freight (₹ Cr/year)"
+            helper="Annual spend on rush / premium shipments to fix planning gaps"
+            optional
+          >
+            <input
+              type="number"
+              value={inputs.expeditedFreight ?? ''}
+              onChange={(e) => onUpdate({ expeditedFreight: e.target.value ? Number(e.target.value) : null })}
+              placeholder="e.g. 40"
+              className="input-field w-48"
+            />
+          </CompactField>
         </div>
-      </InputCard>
-
-      {/* Fill Rate */}
-      <InputCard
-        status={states.fillRate}
-        label="Fill Rate / Service Level (%)"
-        infoText="Percentage of customer orders fulfilled completely and on time. Also called OTIF. Higher is better. If exact number isn't known, a rough sense is enough."
-        benchmarkText={b ? `Industry typical: ${b.typicalFillRate.value}%.` : null}
-      >
-        <input
-          type="number"
-          min="0"
-          max="100"
-          value={inputs.fillRate ?? ''}
-          onChange={(e) => onUpdate({ fillRate: e.target.value ? Number(e.target.value) : null })}
-          placeholder="e.g. 96"
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
-        />
-      </InputCard>
-
-      {/* Expedited Freight */}
-      <InputCard
-        status={states.expeditedFreight}
-        label="Expedited / Premium Freight Spend (₹ Cr/year)"
-        infoText="Annual spend on rush shipments, air freight, or premium logistics used to fix stockouts or meet deadlines. This is often buried across multiple line items. Even a rough estimate helps."
-        optional
-        highlight={rule1Fired && (inputs.expeditedFreight == null || inputs.expeditedFreight === '')}
-        feedbackText={
-          rule1Fired && (inputs.expeditedFreight == null || inputs.expeditedFreight === '')
-            ? 'This number would sharpen the freight cost estimate below.'
-            : null
-        }
-        feedbackType={rule1Fired ? 'warning' : undefined}
-      >
-        <input
-          type="number"
-          value={inputs.expeditedFreight ?? ''}
-          onChange={(e) => onUpdate({ expeditedFreight: e.target.value ? Number(e.target.value) : null })}
-          placeholder="e.g. 40"
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
-        />
-      </InputCard>
+      </Section>
     </div>
+  );
+}
+
+function Section({ title, children }) {
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 p-4">
+      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">{title}</h3>
+      {children}
+    </div>
+  );
+}
+
+function CompactField({ label, helper, optional, className, children }) {
+  return (
+    <div className={className}>
+      <label className="text-xs font-medium text-gray-700 flex items-center gap-1.5">
+        {label}
+        {optional && <span className="text-[10px] text-gray-400 font-normal">(optional)</span>}
+      </label>
+      <div className="mt-1">{children}</div>
+      {helper && <p className="text-[10px] text-gray-400 mt-0.5">{helper}</p>}
+    </div>
+  );
+}
+
+function InlineBenchmark({ value, benchmarkLabel, median, best, unit, lowerIsBetter }) {
+  const gap = lowerIsBetter ? value - best : best - value;
+  const vsMedian = lowerIsBetter ? value - median : median - value;
+
+  let comparison;
+  if (lowerIsBetter) {
+    if (value <= best) comparison = <span className="text-emerald-600">at or better than best-in-class</span>;
+    else if (value <= median) comparison = <span className="text-emerald-600">{Math.abs(vsMedian).toFixed(0)}{unit} better than typical</span>;
+    else comparison = <span className="text-amber-600">{gap.toFixed(0)}{unit} below best · {Math.abs(vsMedian).toFixed(0)}{unit} above typical</span>;
+  } else {
+    if (value >= best) comparison = <span className="text-emerald-600">at or better than best-in-class</span>;
+    else if (value >= median) comparison = <span className="text-emerald-600">{Math.abs(vsMedian).toFixed(0)}{unit} better than typical</span>;
+    else comparison = <span className="text-amber-600">{Math.abs(gap).toFixed(0)}{unit} below best · {Math.abs(vsMedian).toFixed(0)}{unit} below typical</span>;
+  }
+
+  return (
+    <p className="text-[10px] text-gray-500 mt-0.5">
+      {benchmarkLabel} typical: {median}{unit} · Best: {best}{unit} · You: {comparison}
+    </p>
   );
 }
