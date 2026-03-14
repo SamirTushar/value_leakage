@@ -1,6 +1,18 @@
 import { formatCr, formatPct } from '../utils/formatCurrency';
 
-export default function TotalDisplay({ total, totalPctOfRevenue, hasDIO, onViewBreakdown }) {
+export default function TotalDisplay({ total, totalPctOfRevenue, hasDIO, gap1Only, onViewBreakdown }) {
+  // gap1Only: only Gap 1 exists — don't show misleading total
+  if (gap1Only) {
+    return (
+      <div className="bg-white rounded-lg border border-gray-200 p-6 text-center">
+        <p className="text-sm text-gray-500 leading-relaxed">
+          Forecast accuracy suggests significant downstream costs.<br />
+          Enter DIO or inventory value to see the full picture.
+        </p>
+      </div>
+    );
+  }
+
   // Before enough data
   if (!hasDIO) {
     return (

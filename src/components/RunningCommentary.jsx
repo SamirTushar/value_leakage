@@ -1,6 +1,6 @@
 import { formatCr } from '../utils/formatCurrency';
 
-export default function RunningCommentary({ inputs, benchmarks, contradictions, gaps }) {
+export default function RunningCommentary({ inputs, benchmarks, contradictions, gaps, llmParagraph, llmLoading }) {
   const b = benchmarks;
   if (!b) return null;
 
@@ -149,11 +149,28 @@ export default function RunningCommentary({ inputs, benchmarks, contradictions, 
     );
   }
 
+  // Inject LLM paragraph at the end (will become first after reverse)
+  if (llmLoading) {
+    paragraphs.push('...');
+  } else if (llmParagraph) {
+    paragraphs.push(llmParagraph);
+  }
+
+  const reversed = [...paragraphs].reverse();
+
   return (
     <div className="bg-gray-50 rounded-lg border border-gray-200 p-5">
       <div className="prose prose-sm max-w-none">
-        {paragraphs.map((p, i) => (
-          <p key={i} className="text-sm text-gray-700 leading-relaxed mb-3 last:mb-0">
+        {reversed.map((p, i) => (
+          <p
+            key={i}
+            className={`text-sm leading-relaxed mb-3 last:mb-0 ${
+              i === 0
+                ? 'border-l-4 border-teal-500 pl-4 text-gray-800 font-medium'
+                : 'text-gray-500'
+            }`}
+            style={i > 0 ? { opacity: Math.max(0.4, 1 - i * 0.2) } : undefined}
+          >
             {p}
           </p>
         ))}

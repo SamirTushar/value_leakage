@@ -47,3 +47,9 @@ input[type="number"] {
 .input-field::placeholder {
   color: #9CA3AF;
 }
+
+.input-field:disabled {
+  background: #F3F4F6;
+  color: #9CA3AF;
+  cursor: not-allowed;
+}

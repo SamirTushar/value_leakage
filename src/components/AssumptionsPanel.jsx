@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import benchmarkDefaults from '../data/benchmarks.json';
+import { saveCustomIndustry, deleteCustomIndustry, exportCustomIndustries, importCustomIndustries, getCustomIndustries } from '../logic/customIndustries';
 
 const FIELD_LABELS = {
   grossMargin: { label: 'Gross Margin', display: (v) => `${(v * 100).toFixed(0)}%`, toStored: (v) => v / 100, fromStored: (v) => v * 100 },
@@ -15,7 +16,9 @@ const FIELD_LABELS = {
   typicalFillRate: { label: 'Typical Fill Rate', display: (v) => `${v}%` },
 };
 
-export default function AssumptionsPanel({ industry, benchmarks, overrides, onOverride, onReset, onBack }) {
+export default function AssumptionsPanel({ industry, benchmarks, overrides, onOverride, onReset, onBack, isCustomIndustry, onRefreshCustom }) {
+  const [customName, setCustomName] = useState('');
+
   if (!industry || !benchmarks) {
     return (
       <div className="max-w-4xl mx-auto px-6 py-8">
@@ -27,8 +30,60 @@ export default function AssumptionsPanel({ industry, benchmarks, overrides, onOv
     );
   }
 
-  const defaults = benchmarkDefaults[industry]?.benchmarks || {};
+  const defaults = isCustomIndustry
+    ? getCustomIndustries()[industry]?.benchmarks || {}
+    : benchmarkDefaults[industry]?.benchmarks || {};
+
+  const industryLabel = isCustomIndustry
+    ? getCustomIndustries()[industry]?.label || industry
+    : benchmarkDefaults[industry]?.label || industry;
+
   const hasOverrides = Object.keys(overrides).length > 0;
+
+  const handleSaveCustom = () => {
+    const mergedBenchmarks = {};
+    for (const [key, val] of Object.entries(benchmarks)) {
+      mergedBenchmarks[key] = { ...val };
+    }
+    saveCustomIndustry(industry, customName || industryLabel, mergedBenchmarks);
+    if (onRefreshCustom) onRefreshCustom();
+  };
+
+  const handleDeleteCustom = () => {
+    if (confirm(`Delete custom industry "${industryLabel}"?`)) {
+      deleteCustomIndustry(industry);
+      if (onRefreshCustom) onRefreshCustom();
+      onBack();
+    }
+  };
+
+  const handleExport = () => {
+    const json = exportCustomIndustries();
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'custom_industries.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImport = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const result = importCustomIndustries(ev.target.result);
+        if (result && onRefreshCustom) onRefreshCustom();
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  };
 
   return (
     <div className="max-w-4xl mx-auto px-6 py-8">
@@ -38,7 +93,8 @@ export default function AssumptionsPanel({ industry, benchmarks, overrides, onOv
 
       <h2 className="text-xl font-semibold text-gray-900 mb-1">Assumptions</h2>
       <p className="text-sm text-gray-500 mb-6">
-        Benchmark values for {benchmarkDefaults[industry]?.label || industry}. Edit any value — changes reflect live in the diagnostic.
+        Benchmark values for {industryLabel}. Edit any value — changes reflect live in the diagnostic.
+        {isCustomIndustry && <span className="ml-1 text-xs text-teal-600 font-medium">(Custom)</span>}
       </p>
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -99,14 +155,55 @@ export default function AssumptionsPanel({ industry, benchmarks, overrides, onOv
         </table>
       </div>
 
-      {hasOverrides && (
+      <div className="mt-4 flex flex-wrap gap-3">
+        {hasOverrides && (
+          <button
+            onClick={onReset}
+            className="px-4 py-2 text-sm text-gray-500 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
+          >
+            Reset to Industry Defaults
+          </button>
+        )}
+
+        {isCustomIndustry && (
+          <>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={customName}
+                onChange={(e) => setCustomName(e.target.value)}
+                placeholder={industryLabel}
+                className="input-field w-40 text-sm"
+              />
+              <button
+                onClick={handleSaveCustom}
+                className="px-4 py-2 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors cursor-pointer"
+              >
+                Save
+              </button>
+            </div>
+            <button
+              onClick={handleDeleteCustom}
+              className="px-4 py-2 text-sm text-red-500 border border-red-300 rounded-lg hover:bg-red-50 transition-colors cursor-pointer"
+            >
+              Delete
+            </button>
+          </>
+        )}
+
         <button
-          onClick={onReset}
-          className="mt-4 px-4 py-2 text-sm text-gray-500 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
+          onClick={handleExport}
+          className="px-4 py-2 text-sm text-gray-500 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
         >
-          Reset to Industry Defaults
+          Export JSON
         </button>
-      )}
+        <button
+          onClick={handleImport}
+          className="px-4 py-2 text-sm text-gray-500 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
+        >
+          Import JSON
+        </button>
+      </div>
     </div>
   );
 }

@@ -1,14 +1,15 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import Header from './components/Header';
 import InputSection from './components/InputSection';
-import RunningCommentary from './components/RunningCommentary';
-import TotalDisplay from './components/TotalDisplay';
+import InsightSection from './components/InsightSection';
 import DetailedBreakdown from './components/DetailedBreakdown';
 import AssumptionsPanel from './components/AssumptionsPanel';
 import benchmarkData from './data/benchmarks.json';
 import { adjustAccuracy } from './logic/adjustments';
 import { calculateAll } from './logic/calculations';
 import { detectContradictions } from './logic/contradictions';
+import { generateCommentary, getApiKey } from './logic/llmCommentary';
+import { getCustomIndustries } from './logic/customIndustries';
 
 const INITIAL_INPUTS = {
   companyName: '',
@@ -28,10 +29,19 @@ function App() {
   const [view, setView] = useState('diagnostic');
   const [inputs, setInputs] = useState(INITIAL_INPUTS);
   const [overrides, setOverrides] = useState({});
+  const [customIndustries, setCustomIndustries] = useState(() => getCustomIndustries());
+  const [llmParagraph, setLlmParagraph] = useState(null);
+  const [llmLoading, setLlmLoading] = useState(false);
+  const debounceRef = useRef(null);
+
+  // Merge standard + custom industries for lookup
+  const allIndustries = useMemo(() => {
+    return { ...benchmarkData, ...customIndustries };
+  }, [customIndustries]);
 
   const benchmarks = useMemo(() => {
-    if (!inputs.industry || !benchmarkData[inputs.industry]) return null;
-    const base = benchmarkData[inputs.industry].benchmarks;
+    if (!inputs.industry || !allIndustries[inputs.industry]) return null;
+    const base = allIndustries[inputs.industry].benchmarks;
     const merged = {};
     for (const [key, val] of Object.entries(base)) {
       merged[key] = overrides[key] !== undefined
@@ -39,31 +49,28 @@ function App() {
         : { ...val };
     }
     return merged;
-  }, [inputs.industry, overrides]);
+  }, [inputs.industry, overrides, allIndustries]);
 
-  const industryLabel = inputs.industry ? benchmarkData[inputs.industry]?.label : '';
+  const industryLabel = inputs.industry ? allIndustries[inputs.industry]?.label : '';
 
   // Adjusted accuracy
   const adjustedAccuracyVal = useMemo(() => {
     if (inputs.reportedAccuracy != null && inputs.reportedAccuracy !== '') {
       return adjustAccuracy(Number(inputs.reportedAccuracy), inputs.accuracyLevel);
     }
-    // Fallback to industry typical for calculations only
     if (benchmarks) return benchmarks.typicalMAPE.value;
     return null;
   }, [inputs.reportedAccuracy, inputs.accuracyLevel, benchmarks]);
 
-  // Effective inputs: auto-fill COGS for unlisted, but NO prefilled diagnostic values
+  // Effective inputs
   const effectiveInputs = useMemo(() => {
     if (!benchmarks) return { ...inputs, industryLabel };
 
-    // Auto-COGS for unlisted
     let effectiveCOGS = inputs.cogs;
     if ((effectiveCOGS == null || effectiveCOGS === '') && inputs.revenue && inputs.companyType === 'Unlisted') {
       effectiveCOGS = inputs.revenue * (1 - benchmarks.grossMargin.value);
     }
 
-    // Auto-DIO from inventory value
     let effectiveDIO = inputs.dio;
     if ((effectiveDIO == null || effectiveDIO === '') && inputs.inventoryValue && effectiveCOGS) {
       effectiveDIO = Math.round((inputs.inventoryValue / effectiveCOGS) * 365);
@@ -73,19 +80,16 @@ function App() {
       ...inputs,
       cogs: effectiveCOGS != null ? Number(effectiveCOGS) : null,
       dio: effectiveDIO != null ? Number(effectiveDIO) : null,
-      // fillRate stays as-is — NO prefill. Null means "not entered".
       fillRate: inputs.fillRate != null ? Number(inputs.fillRate) : null,
       adjustedAccuracy: adjustedAccuracyVal,
       industryLabel,
     };
   }, [inputs, benchmarks, adjustedAccuracyVal, industryLabel]);
 
-  // For calculations, use benchmark fallbacks where user hasn't entered values
   const calcInputs = useMemo(() => {
     if (!benchmarks) return effectiveInputs;
     return {
       ...effectiveInputs,
-      // Use benchmark fill rate only for gap calculations, not for display
       fillRate: effectiveInputs.fillRate ?? benchmarks.typicalFillRate.value,
     };
   }, [effectiveInputs, benchmarks]);
@@ -97,10 +101,27 @@ function App() {
 
   const contradictions = useMemo(() => {
     if (!benchmarks) return [];
-    // Only detect contradictions when user has actually entered fill rate
     if (effectiveInputs.fillRate == null) return [];
     return detectContradictions(effectiveInputs, benchmarks);
   }, [effectiveInputs, benchmarks]);
+
+  // LLM commentary with 1s debounce
+  useEffect(() => {
+    if (!getApiKey() || !benchmarks || !effectiveInputs.revenue) {
+      setLlmParagraph(null);
+      return;
+    }
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      setLlmLoading(true);
+      const result = await generateCommentary(effectiveInputs, gaps, contradictions, benchmarks);
+      setLlmParagraph(result);
+      setLlmLoading(false);
+    }, 1000);
+
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [effectiveInputs, gaps, contradictions, benchmarks]);
 
   const handleUpdate = useCallback((updates) => {
     setInputs((prev) => {
@@ -127,13 +148,17 @@ function App() {
     setOverrides({});
   }, []);
 
-  const tabs = [
-    { id: 'diagnostic', label: 'Diagnostic' },
-    { id: 'breakdown', label: 'Breakdown' },
-    { id: 'assumptions', label: 'Assumptions' },
-  ];
+  const refreshCustomIndustries = useCallback(() => {
+    setCustomIndustries(getCustomIndustries());
+  }, []);
 
   const hasDIO = effectiveInputs.dio != null && effectiveInputs.dio !== '';
+
+  const tabs = [
+    { id: 'diagnostic', label: 'Diagnostic' },
+    { id: 'breakdown', label: 'Breakdown', disabled: !hasDIO },
+    { id: 'assumptions', label: 'Assumptions' },
+  ];
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -143,6 +168,7 @@ function App() {
         industry={inputs.industry}
         revenue={inputs.revenue}
         onUpdate={handleUpdate}
+        customIndustries={customIndustries}
       />
 
       <div className="bg-white border-b border-gray-200">
@@ -151,11 +177,13 @@ function App() {
             {tabs.map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => setView(tab.id)}
-                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors cursor-pointer ${
-                  view === tab.id
-                    ? 'border-teal-600 text-teal-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                onClick={() => !tab.disabled && setView(tab.id)}
+                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  tab.disabled
+                    ? 'border-transparent text-gray-300 cursor-not-allowed'
+                    : view === tab.id
+                      ? 'border-teal-600 text-teal-600 cursor-pointer'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 cursor-pointer'
                 }`}
               >
                 {tab.label}
@@ -167,22 +195,20 @@ function App() {
 
       {view === 'diagnostic' && (
         <div className="max-w-4xl mx-auto px-6 py-6 space-y-5">
-          <InputSection
-            inputs={effectiveInputs}
-            benchmarks={benchmarks}
-            onUpdate={handleUpdate}
-          />
-          <RunningCommentary
+          <InsightSection
             inputs={effectiveInputs}
             benchmarks={benchmarks}
             contradictions={contradictions}
             gaps={gaps}
-          />
-          <TotalDisplay
-            total={gaps.total}
-            totalPctOfRevenue={gaps.totalPctOfRevenue}
             hasDIO={hasDIO}
             onViewBreakdown={() => setView('breakdown')}
+            llmParagraph={llmParagraph}
+            llmLoading={llmLoading}
+          />
+          <InputSection
+            inputs={effectiveInputs}
+            benchmarks={benchmarks}
+            onUpdate={handleUpdate}
           />
         </div>
       )}
@@ -205,6 +231,8 @@ function App() {
           onOverride={handleOverride}
           onReset={handleResetOverrides}
           onBack={() => setView('diagnostic')}
+          isCustomIndustry={!!customIndustries[inputs.industry]}
+          onRefreshCustom={refreshCustomIndustries}
         />
       )}
     </div>

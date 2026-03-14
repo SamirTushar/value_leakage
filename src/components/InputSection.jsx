@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { ACCURACY_LEVELS, adjustAccuracy } from '../logic/adjustments';
 import { formatCr } from '../utils/formatCurrency';
 import BenchmarkBar from './BenchmarkBar';
 
 export default function InputSection({ inputs, benchmarks, onUpdate }) {
+  const [showDIOOverride, setShowDIOOverride] = useState(false);
   const b = benchmarks;
   const hasRevenue = inputs.revenue != null && inputs.revenue !== '';
   const isListed = inputs.companyType === 'Listed';
@@ -26,64 +28,86 @@ export default function InputSection({ inputs, benchmarks, onUpdate }) {
 
   const displayDIO = inputs.dio ?? autoDIO;
 
-  if (!hasRevenue || !inputs.industry) {
-    return null;
-  }
+  const disabled = !hasRevenue || !b;
 
   return (
-    <div className="space-y-5">
+    <div className={`space-y-5 ${disabled ? 'opacity-50 pointer-events-none' : ''}`}>
       {/* Financials Group */}
       <Section title="Financials">
         {isListed ? (
-          <div className="grid grid-cols-3 gap-4">
-            <CompactField
-              label="COGS (₹ Cr)"
-              helper="Cost of Goods Sold — from the P&L. Needed to calculate daily inventory cost."
-            >
-              <input
-                type="number"
-                value={inputs.cogs ?? ''}
-                onChange={(e) => onUpdate({ cogs: e.target.value ? Number(e.target.value) : null })}
-                placeholder="e.g. 5956"
-                className="input-field w-full"
-              />
-            </CompactField>
+          <div>
+            <div className="grid grid-cols-2 gap-4">
+              <CompactField
+                label="COGS (₹ Cr)"
+                helper="Cost of Goods Sold — from the P&L. Needed to calculate daily inventory cost."
+              >
+                <input
+                  type="number"
+                  value={inputs.cogs ?? ''}
+                  onChange={(e) => onUpdate({ cogs: e.target.value ? Number(e.target.value) : null })}
+                  placeholder="e.g. 5956"
+                  className="input-field w-full"
+                />
+              </CompactField>
 
-            <CompactField
-              label="Inventory (₹ Cr)"
-              helper="Total inventory on balance sheet. We'll calculate DIO from this."
-            >
-              <input
-                type="number"
-                value={inputs.inventoryValue ?? ''}
-                onChange={(e) => {
-                  const val = e.target.value ? Number(e.target.value) : null;
-                  const cogs = inputs.cogs;
-                  const updates = { inventoryValue: val };
-                  if (val != null && cogs) {
-                    updates.dio = Math.round((val / cogs) * 365);
-                  } else if (val == null) {
-                    // Only clear auto-calculated DIO, not manually entered
-                    if (autoDIO != null) updates.dio = null;
-                  }
-                  onUpdate(updates);
-                }}
-                placeholder="e.g. 1271"
-                className="input-field w-full"
-              />
-            </CompactField>
+              <CompactField
+                label="Inventory (₹ Cr)"
+                helper="Total inventory on balance sheet. We'll calculate DIO from this."
+              >
+                <input
+                  type="number"
+                  value={inputs.inventoryValue ?? ''}
+                  onChange={(e) => {
+                    const val = e.target.value ? Number(e.target.value) : null;
+                    const cogs = inputs.cogs;
+                    const updates = { inventoryValue: val };
+                    if (val != null && cogs) {
+                      updates.dio = Math.round((val / cogs) * 365);
+                    } else if (val == null) {
+                      if (autoDIO != null) updates.dio = null;
+                    }
+                    onUpdate(updates);
+                  }}
+                  placeholder="e.g. 1271"
+                  className="input-field w-full"
+                />
+              </CompactField>
+            </div>
 
-            <CompactField
-              label="DIO (days)"
-              helper="Days your inventory could cover sales. Auto-calculated if you entered inventory above."
-            >
-              <input
-                type="number"
-                value={displayDIO ?? ''}
-                onChange={(e) => onUpdate({ dio: e.target.value ? Number(e.target.value) : null })}
-                placeholder={autoDIO != null ? `${autoDIO} (calculated)` : 'e.g. 78'}
-                className="input-field w-full"
-              />
+            {/* DIO Display Block */}
+            <div className="mt-3 bg-gray-50 rounded-lg p-3">
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-medium text-gray-700">Days Inventory Outstanding (DIO)</label>
+                {displayDIO != null && !showDIOOverride && (
+                  <button
+                    onClick={() => setShowDIOOverride(true)}
+                    className="text-[10px] text-teal-600 hover:underline cursor-pointer"
+                  >
+                    Override
+                  </button>
+                )}
+                {showDIOOverride && (
+                  <button
+                    onClick={() => { setShowDIOOverride(false); onUpdate({ dio: null }); }}
+                    className="text-[10px] text-teal-600 hover:underline cursor-pointer"
+                  >
+                    Use calculated
+                  </button>
+                )}
+              </div>
+              {showDIOOverride ? (
+                <input
+                  type="number"
+                  value={inputs.dio ?? ''}
+                  onChange={(e) => onUpdate({ dio: e.target.value ? Number(e.target.value) : null })}
+                  placeholder="Enter DIO manually"
+                  className="input-field w-32"
+                />
+              ) : displayDIO != null ? (
+                <p className="text-2xl font-bold text-gray-900">{displayDIO} <span className="text-sm font-normal text-gray-400">days</span></p>
+              ) : (
+                <p className="text-sm text-gray-400">Enter COGS and inventory above to auto-calculate</p>
+              )}
               {b && displayDIO != null && (
                 <>
                   <InlineBenchmark
@@ -109,12 +133,12 @@ export default function InputSection({ inputs, benchmarks, onUpdate }) {
                   {inputs.industryLabel} median: {b.medianDIO.value} days · Best: {b.bestInClassDIO.value} days
                 </p>
               )}
-            </CompactField>
+            </div>
           </div>
-        ) : (
+        ) : b && autoCOGS != null ? (
           <div>
             <p className="text-xs text-gray-500 mb-2">
-              We estimate COGS at {formatCr(autoCOGS)} based on {inputs.industryLabel} gross margin of {b ? (b.grossMargin.value * 100).toFixed(0) : '—'}%.
+              We estimate COGS at {formatCr(autoCOGS)} based on {inputs.industryLabel} gross margin of {(b.grossMargin.value * 100).toFixed(0)}%.
               <button
                 onClick={() => {
                   const val = prompt('Enter COGS (₹ Cr):', autoCOGS);
@@ -126,7 +150,7 @@ export default function InputSection({ inputs, benchmarks, onUpdate }) {
               </button>
             </p>
           </div>
-        )}
+        ) : null}
       </Section>
 
       {/* Supply Chain Metrics Group */}

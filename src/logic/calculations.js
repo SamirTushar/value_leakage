@@ -93,9 +93,12 @@ export function calculateAll(inputs, benchmarks) {
     }
   }
 
+  const gap1Only = gap1 != null && gap2 == null && gap3 == null && gap4 == null;
+
   return {
     ...gaps,
     total: hasAnyGap ? total : null,
     totalPctOfRevenue: hasAnyGap && inputs.revenue ? (total / inputs.revenue) * 100 : null,
+    gap1Only,
   };
 }
