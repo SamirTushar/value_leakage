@@ -1,189 +1,98 @@
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import Header from './components/Header';
-import InputSection from './components/InputSection';
-import InsightSection from './components/InsightSection';
-import DetailedBreakdown from './components/DetailedBreakdown';
-import AssumptionsPanel from './components/AssumptionsPanel';
+import { useState, useCallback } from 'react';
+import { EXAMPLES } from './data/examples';
 import benchmarkData from './data/benchmarks.json';
-import { adjustAccuracy } from './logic/adjustments';
 import { calculateAll } from './logic/calculations';
-import { detectContradictions } from './logic/contradictions';
-import { generateCommentary, getApiKey } from './logic/llmCommentary';
-import { getCustomIndustries } from './logic/customIndustries';
+import { generateNarratives } from './logic/narratives';
+import { exampleToInputs, EMPTY_INPUTS, getModuleOptions, hasCustomData } from './logic/mapExample';
 
-const INITIAL_INPUTS = {
-  companyName: '',
-  companyType: 'Listed',
-  industry: '',
-  revenue: null,
-  cogs: null,
-  reportedAccuracy: null,
-  accuracyLevel: 'SKU-Week',
-  dio: null,
-  inventoryValue: null,
-  fillRate: null,
-  expeditedFreight: null,
+import ExampleSelector from './components/ExampleSelector';
+import CompanyCard from './components/CompanyCard';
+import StepCard from './components/StepCard';
+import EffectContent from './components/EffectContent';
+import CauseContent from './components/CauseContent';
+import CompensationContent from './components/CompensationContent';
+import CostContent from './components/CostContent';
+import ModuleConnection from './components/ModuleConnection';
+import AssumptionsTable from './components/AssumptionsTable';
+import ROISummary from './components/ROISummary';
+
+const STEP_COLORS = {
+  effect: '#3B82F6',
+  cause: '#F59E0B',
+  compensation: '#D97706',
+  cost: '#0D9488',
 };
 
+const TABS = [
+  { id: 'diagnostic', label: 'Diagnostic' },
+  { id: 'assumptions', label: 'Assumptions' },
+  { id: 'roi', label: 'ROI' },
+];
+
 function App() {
-  const [view, setView] = useState('diagnostic');
-  const [inputs, setInputs] = useState(INITIAL_INPUTS);
-  const [overrides, setOverrides] = useState({});
-  const [customIndustries, setCustomIndustries] = useState(() => getCustomIndustries());
-  const [llmParagraph, setLlmParagraph] = useState(null);
-  const [llmLoading, setLlmLoading] = useState(false);
-  const debounceRef = useRef(null);
+  const [selectedId, setSelectedId] = useState(EXAMPLES[0].id);
+  const [inputs, setInputs] = useState(() => exampleToInputs(EXAMPLES[0]));
+  const [activeTab, setActiveTab] = useState('diagnostic');
 
-  // Merge standard + custom industries for lookup
-  const allIndustries = useMemo(() => {
-    return { ...benchmarkData, ...customIndustries };
-  }, [customIndustries]);
+  const isCustom = selectedId === 'custom';
 
-  const benchmarks = useMemo(() => {
-    if (!inputs.industry || !allIndustries[inputs.industry]) return null;
-    const base = allIndustries[inputs.industry].benchmarks;
-    const merged = {};
-    for (const [key, val] of Object.entries(base)) {
-      merged[key] = overrides[key] !== undefined
-        ? { ...val, value: overrides[key] }
-        : { ...val };
-    }
-    return merged;
-  }, [inputs.industry, overrides, allIndustries]);
+  // Look up industry benchmarks
+  const industryEntry = inputs.industry ? benchmarkData[inputs.industry] : null;
+  const benchmarks = industryEntry?.benchmarks ?? null;
 
-  const industryLabel = inputs.industry ? allIndustries[inputs.industry]?.label : '';
+  // Compute everything from inputs + benchmarks
+  const results = calculateAll(inputs, benchmarks);
+  const narratives = generateNarratives(inputs, results, benchmarks);
+  const moduleOptions = getModuleOptions(inputs.diagnosticFocus, inputs.industry);
 
-  // Adjusted accuracy
-  const adjustedAccuracyVal = useMemo(() => {
-    if (inputs.reportedAccuracy != null && inputs.reportedAccuracy !== '') {
-      return adjustAccuracy(Number(inputs.reportedAccuracy), inputs.accuracyLevel);
-    }
-    if (benchmarks) return benchmarks.typicalMAPE.value;
-    return null;
-  }, [inputs.reportedAccuracy, inputs.accuracyLevel, benchmarks]);
+  const updateInput = useCallback((field, value) => {
+    setInputs((prev) => ({ ...prev, [field]: value }));
+  }, []);
 
-  // Effective inputs
-  const effectiveInputs = useMemo(() => {
-    if (!benchmarks) return { ...inputs, industryLabel };
-
-    let effectiveCOGS = inputs.cogs;
-    if ((effectiveCOGS == null || effectiveCOGS === '') && inputs.revenue && inputs.companyType === 'Unlisted') {
-      effectiveCOGS = inputs.revenue * (1 - benchmarks.grossMargin.value);
-    }
-
-    let effectiveDIO = inputs.dio;
-    if ((effectiveDIO == null || effectiveDIO === '') && inputs.inventoryValue && effectiveCOGS) {
-      effectiveDIO = Math.round((inputs.inventoryValue / effectiveCOGS) * 365);
-    }
-
-    return {
-      ...inputs,
-      cogs: effectiveCOGS != null ? Number(effectiveCOGS) : null,
-      dio: effectiveDIO != null ? Number(effectiveDIO) : null,
-      fillRate: inputs.fillRate != null ? Number(inputs.fillRate) : null,
-      adjustedAccuracy: adjustedAccuracyVal,
-      industryLabel,
-    };
-  }, [inputs, benchmarks, adjustedAccuracyVal, industryLabel]);
-
-  const calcInputs = useMemo(() => {
-    if (!benchmarks) return effectiveInputs;
-    return {
-      ...effectiveInputs,
-      fillRate: effectiveInputs.fillRate ?? benchmarks.typicalFillRate.value,
-    };
-  }, [effectiveInputs, benchmarks]);
-
-  const gaps = useMemo(() => {
-    if (!benchmarks || !calcInputs.revenue) return {};
-    return calculateAll(calcInputs, benchmarks);
-  }, [calcInputs, benchmarks]);
-
-  const contradictions = useMemo(() => {
-    if (!benchmarks) return [];
-    if (effectiveInputs.fillRate == null) return [];
-    return detectContradictions(effectiveInputs, benchmarks);
-  }, [effectiveInputs, benchmarks]);
-
-  // LLM commentary with 1s debounce
-  useEffect(() => {
-    if (!getApiKey() || !benchmarks || !effectiveInputs.revenue) {
-      setLlmParagraph(null);
-      return;
-    }
-
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(async () => {
-      setLlmLoading(true);
-      const result = await generateCommentary(effectiveInputs, gaps, contradictions, benchmarks);
-      setLlmParagraph(result);
-      setLlmLoading(false);
-    }, 1000);
-
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [effectiveInputs, gaps, contradictions, benchmarks]);
-
-  const handleUpdate = useCallback((updates) => {
-    setInputs((prev) => {
-      const next = { ...prev, ...updates };
-      if (updates.industry !== undefined && updates.industry !== prev.industry) {
-        setOverrides({});
+  const handleSelectExample = useCallback((id) => {
+    if (isCustom && hasCustomData(inputs)) {
+      if (!window.confirm('Switch to this example? Your current inputs will be replaced.')) {
+        return;
       }
-      return next;
-    });
-  }, []);
-
-  const handleOverride = useCallback((key, value) => {
-    setOverrides((prev) => {
-      if (value === undefined) {
-        const next = { ...prev };
-        delete next[key];
-        return next;
-      }
-      return { ...prev, [key]: value };
-    });
-  }, []);
-
-  const handleResetOverrides = useCallback(() => {
-    setOverrides({});
-  }, []);
-
-  const refreshCustomIndustries = useCallback(() => {
-    setCustomIndustries(getCustomIndustries());
-  }, []);
-
-  const hasDIO = effectiveInputs.dio != null && effectiveInputs.dio !== '';
-
-  const tabs = [
-    { id: 'diagnostic', label: 'Diagnostic' },
-    { id: 'breakdown', label: 'Breakdown', disabled: !hasDIO },
-    { id: 'assumptions', label: 'Assumptions' },
-  ];
+    }
+    setSelectedId(id);
+    if (id === 'custom') {
+      setInputs({ ...EMPTY_INPUTS });
+    } else {
+      const ex = EXAMPLES.find((e) => e.id === id);
+      if (ex) setInputs(exampleToInputs(ex));
+    }
+    setActiveTab('diagnostic');
+  }, [isCustom, inputs]);
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Header
-        companyName={inputs.companyName}
-        companyType={inputs.companyType}
-        industry={inputs.industry}
-        revenue={inputs.revenue}
-        onUpdate={handleUpdate}
-        customIndustries={customIndustries}
-      />
+      {/* Header */}
+      <div className="bg-white border-b border-gray-200">
+        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
+          <h1 className="text-base font-semibold text-gray-900 tracking-tight">
+            Value Diagnostic
+          </h1>
+          <ExampleSelector
+            examples={EXAMPLES}
+            selectedId={selectedId}
+            onSelect={handleSelectExample}
+          />
+        </div>
+      </div>
 
+      {/* Tab bar */}
       <div className="bg-white border-b border-gray-200">
         <div className="max-w-4xl mx-auto px-6">
           <nav className="flex gap-1">
-            {tabs.map((tab) => (
+            {TABS.map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => !tab.disabled && setView(tab.id)}
-                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                  tab.disabled
-                    ? 'border-transparent text-gray-300 cursor-not-allowed'
-                    : view === tab.id
-                      ? 'border-teal-600 text-teal-600 cursor-pointer'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 cursor-pointer'
+                onClick={() => setActiveTab(tab.id)}
+                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors cursor-pointer ${
+                  activeTab === tab.id
+                    ? 'border-teal-600 text-teal-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >
                 {tab.label}
@@ -193,47 +102,61 @@ function App() {
         </div>
       </div>
 
-      {view === 'diagnostic' && (
-        <div className="max-w-4xl mx-auto px-6 py-6 space-y-5">
-          <InsightSection
-            inputs={effectiveInputs}
-            benchmarks={benchmarks}
-            contradictions={contradictions}
-            gaps={gaps}
-            hasDIO={hasDIO}
-            onViewBreakdown={() => setView('breakdown')}
-            llmParagraph={llmParagraph}
-            llmLoading={llmLoading}
-          />
-          <InputSection
-            inputs={effectiveInputs}
-            benchmarks={benchmarks}
-            onUpdate={handleUpdate}
+      {/* Tab content */}
+      {activeTab === 'diagnostic' && (
+        <div className="max-w-4xl mx-auto px-6 py-6 space-y-4">
+          <CompanyCard inputs={inputs} results={results} onInputChange={updateInput} />
+
+          <StepCard step={1} label="Effect" color={STEP_COLORS.effect}>
+            <EffectContent
+              inputs={inputs}
+              results={results}
+              narratives={narratives}
+              onInputChange={updateInput}
+            />
+          </StepCard>
+
+          <StepCard step={2} label="Cause" color={STEP_COLORS.cause}>
+            <CauseContent
+              inputs={inputs}
+              results={results}
+              narratives={narratives}
+              benchmarks={benchmarks}
+              onInputChange={updateInput}
+            />
+          </StepCard>
+
+          <StepCard step={3} label="Compensation" color={STEP_COLORS.compensation}>
+            <CompensationContent
+              inputs={inputs}
+              results={results}
+              narratives={narratives}
+              onInputChange={updateInput}
+            />
+          </StepCard>
+
+          <StepCard step={4} label="Cost" color={STEP_COLORS.cost}>
+            <CostContent
+              inputs={inputs}
+              results={results}
+              onInputChange={updateInput}
+            />
+          </StepCard>
+
+          <ModuleConnection
+            connections={moduleOptions}
+            selectedIndex={inputs.selectedModuleAnswer}
+            onSelect={(idx) => updateInput('selectedModuleAnswer', idx)}
           />
         </div>
       )}
 
-      {view === 'breakdown' && (
-        <DetailedBreakdown
-          inputs={effectiveInputs}
-          benchmarks={benchmarks}
-          gaps={gaps}
-          contradictions={contradictions}
-          onBack={() => setView('diagnostic')}
-        />
+      {activeTab === 'assumptions' && (
+        <AssumptionsTable industry={inputs.industry} benchmarks={benchmarks} />
       )}
 
-      {view === 'assumptions' && (
-        <AssumptionsPanel
-          industry={inputs.industry}
-          benchmarks={benchmarks}
-          overrides={overrides}
-          onOverride={handleOverride}
-          onReset={handleResetOverrides}
-          onBack={() => setView('diagnostic')}
-          isCustomIndustry={!!customIndustries[inputs.industry]}
-          onRefreshCustom={refreshCustomIndustries}
-        />
+      {activeTab === 'roi' && (
+        <ROISummary inputs={inputs} results={results} onInputChange={updateInput} />
       )}
     </div>
   );

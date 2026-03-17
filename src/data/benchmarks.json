@@ -49,5 +49,22 @@
       "writeOffRate": { "value": 0.01, "unit": "%", "source": "TBD" },
       "typicalFillRate": { "value": 94, "unit": "%", "source": "TBD" }
     }
+  },
+  "Pharma": {
+    "label": "Pharmaceuticals",
+    "ready": true,
+    "benchmarks": {
+      "grossMargin": { "value": 0.50, "unit": "%", "source": "Industry average — branded pharma" },
+      "medianDIO": { "value": 180, "unit": "days", "source": "nVentic Pharma Benchmark Report" },
+      "bestInClassDIO": { "value": 120, "unit": "days", "source": "nVentic top quartile" },
+      "typicalMAPE": { "value": 50, "unit": "%", "source": "Industry pattern — high SKU variability" },
+      "bestInClassMAPE": { "value": 35, "unit": "%", "source": "Industry pattern" },
+      "freightPctOfCOGS": { "value": 0.06, "unit": "%", "source": "Industry pattern — cold chain premium" },
+      "expeditedPctOfFreight": { "value": 0.10, "unit": "%", "source": "Industry pattern" },
+      "carryingCostRate": { "value": 0.20, "unit": "%", "source": "Industry standard (capital + warehousing + insurance)" },
+      "lostSalesRate": { "value": 0.01, "unit": "%", "source": "Industry pattern — regulated supply" },
+      "writeOffRate": { "value": 0.03, "unit": "%", "source": "nVentic — expiry-driven destruction" },
+      "typicalFillRate": { "value": 97, "unit": "%", "source": "Industry pattern — availability critical" }
+    }
   }
 }

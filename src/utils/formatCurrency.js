@@ -1,7 +1,10 @@
 export function formatCr(value) {
   if (value == null || isNaN(value)) return '—';
   if (value >= 1) {
-    return `₹${value.toFixed(1)} Cr`;
+    const formatted = value % 1 === 0
+      ? value.toLocaleString('en-IN')
+      : value.toLocaleString('en-IN', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    return `₹${formatted} Cr`;
   }
   // Show in lakhs for small numbers
   const lakhs = value * 100;

@@ -18,15 +18,6 @@ input[type="number"] {
   -moz-appearance: textfield;
 }
 
-@keyframes pulse-dot {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-
-.animate-pulse-dot {
-  animation: pulse-dot 2s ease-in-out infinite;
-}
-
 .input-field {
   padding: 6px 10px;
   border: 1px solid #D1D5DB;
@@ -46,10 +37,4 @@ input[type="number"] {
 
 .input-field::placeholder {
   color: #9CA3AF;
-}
-
-.input-field:disabled {
-  background: #F3F4F6;
-  color: #9CA3AF;
-  cursor: not-allowed;
 }
