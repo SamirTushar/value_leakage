@@ -125,7 +125,7 @@ function App() {
       )}
 
       {activeTab === 'deepDiagnosis' && (
-        <DeepDiagnosisTab inputs={inputs} benchmarks={benchmarks} />
+        <DeepDiagnosisTab inputs={inputs} benchmarks={benchmarks} selectedId={selectedId} />
       )}
 
       {activeTab === 'assumptions' && (

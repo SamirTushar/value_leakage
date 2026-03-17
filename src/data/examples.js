@@ -9,6 +9,14 @@ export const EXAMPLES = [
     cogs: 5956,
     inventory: 1271,
 
+    trendData: [
+      { year: 'FY21', revenue: 7638, cogs: 4593, inventory: 980 },
+      { year: 'FY22', revenue: 9512, cogs: 6158, inventory: 1163 },
+      { year: 'FY23', revenue: 9764, cogs: 5956, inventory: 1271 },
+      { year: 'FY24', revenue: 9828, cogs: 5890, inventory: 1198 },
+      { year: 'FY25', revenue: 11039, cogs: 6505, inventory: 1350 },
+    ],
+
     diagnosticFocus: 'dio',
 
     effect: {
@@ -85,6 +93,13 @@ export const EXAMPLES = [
     revenue: 12886,
     cogs: 6350,
     inventory: 2240,
+
+    trendData: [
+      { year: 'FY21', revenue: 9562, cogs: 4710, inventory: 1580 },
+      { year: 'FY22', revenue: 10889, cogs: 5490, inventory: 1820 },
+      { year: 'FY23', revenue: 11530, cogs: 5680, inventory: 2010 },
+      { year: 'FY24', revenue: 12886, cogs: 6350, inventory: 2240 },
+    ],
 
     diagnosticFocus: 'dio',
 
@@ -163,6 +178,12 @@ export const EXAMPLES = [
     cogs: 350,
     inventory: 129,
 
+    trendData: [
+      { year: 'FY22', revenue: 420, cogs: 294, inventory: 105 },
+      { year: 'FY23', revenue: 460, cogs: 322, inventory: 118 },
+      { year: 'FY24', revenue: 500, cogs: 350, inventory: 129 },
+    ],
+
     diagnosticFocus: 'dio',
 
     effect: {
@@ -239,6 +260,13 @@ export const EXAMPLES = [
     revenue: 3000,
     cogs: 1500,
     inventory: 750,
+
+    trendData: [
+      { year: 'FY21', revenue: 2200, cogs: 1100, inventory: 520 },
+      { year: 'FY22', revenue: 2500, cogs: 1250, inventory: 610 },
+      { year: 'FY23', revenue: 2750, cogs: 1375, inventory: 680 },
+      { year: 'FY24', revenue: 3000, cogs: 1500, inventory: 750 },
+    ],
 
     diagnosticFocus: 'aging',
 

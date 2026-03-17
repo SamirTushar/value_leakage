@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { EXAMPLES } from '../data/examples';
 import benchmarkData from '../data/benchmarks.json';
 import { parseCSVText, parseCSVFile, autoDetectColumns, extractYearsData } from '../utils/csvParser';
 import { calculateTrends } from '../logic/trendCalculations';
@@ -11,15 +12,39 @@ const INDUSTRIES = Object.entries(benchmarkData)
   .filter(([, v]) => v.ready !== false)
   .map(([key, v]) => ({ value: key, label: v.label }));
 
-export default function DeepDiagnosisTab({ inputs }) {
+export default function DeepDiagnosisTab({ inputs, selectedId }) {
   const [industry, setIndustry] = useState(inputs.industry || '');
   const [inputMode, setInputMode] = useState('paste');
   const [pasteText, setPasteText] = useState('');
-  const [parsedData, setParsedData] = useState(null); // { headers, rows }
+  const [parsedData, setParsedData] = useState(null);
   const [columnMap, setColumnMap] = useState(null);
-  const [yearsData, setYearsData] = useState([]); // [{ year, revenue, cogs, inventory }]
+  const [yearsData, setYearsData] = useState([]);
   const [error, setError] = useState(null);
   const [showMapper, setShowMapper] = useState(false);
+  const [isCustomUpload, setIsCustomUpload] = useState(false);
+
+  const isCustom = selectedId === 'custom';
+
+  // Auto-load example trend data when a pre-built example is selected
+  useEffect(() => {
+    if (isCustom) {
+      // For custom, only show upload if user hasn't uploaded yet
+      if (!isCustomUpload) {
+        setYearsData([]);
+      }
+      return;
+    }
+    const example = EXAMPLES.find((e) => e.id === selectedId);
+    if (example?.trendData) {
+      setYearsData(example.trendData);
+      setIndustry(example.industry || '');
+      setIsCustomUpload(false);
+      setError(null);
+      setShowMapper(false);
+      setParsedData(null);
+      setPasteText('');
+    }
+  }, [selectedId]);
 
   const benchmarks = industry ? benchmarkData[industry]?.benchmarks : null;
 
@@ -48,7 +73,6 @@ export default function DeepDiagnosisTab({ inputs }) {
 
     if (!detected) {
       setShowMapper(true);
-      // Initialize column map with first columns
       setColumnMap({
         yearCol: 0,
         revenueCol: parsed.headers.length > 1 ? 1 : 0,
@@ -65,6 +89,7 @@ export default function DeepDiagnosisTab({ inputs }) {
       return;
     }
     setYearsData(data);
+    setIsCustomUpload(true);
     setShowMapper(false);
   }
 
@@ -88,6 +113,7 @@ export default function DeepDiagnosisTab({ inputs }) {
       return;
     }
     setYearsData(data);
+    setIsCustomUpload(true);
     setShowMapper(false);
     setError(null);
   }
@@ -99,6 +125,7 @@ export default function DeepDiagnosisTab({ inputs }) {
     setError(null);
     setShowMapper(false);
     setPasteText('');
+    setIsCustomUpload(false);
   }
 
   function updateYearField(index, field, value) {
@@ -108,6 +135,9 @@ export default function DeepDiagnosisTab({ inputs }) {
       ),
     );
   }
+
+  // Show upload UI only for custom mode without data
+  const showUploadUI = isCustom && !hasData && !showMapper;
 
   return (
     <div className="max-w-4xl mx-auto px-6 py-6 space-y-6">
@@ -128,8 +158,8 @@ export default function DeepDiagnosisTab({ inputs }) {
         </select>
       </div>
 
-      {/* Upload section — only if no data yet */}
-      {!hasData && !showMapper && (
+      {/* Upload section — only for custom mode with no data */}
+      {showUploadUI && (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-6 py-6">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-4">
             Upload Financial Data
@@ -267,14 +297,16 @@ export default function DeepDiagnosisTab({ inputs }) {
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-6 py-5">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-                Key Metrics Extracted
+                Key Metrics
               </h2>
-              <button
-                onClick={handleReset}
-                className="text-xs text-gray-400 hover:text-gray-600 cursor-pointer"
-              >
-                ↻ Upload different data
-              </button>
+              {isCustom && (
+                <button
+                  onClick={handleReset}
+                  className="text-xs text-gray-400 hover:text-gray-600 cursor-pointer"
+                >
+                  ↻ Upload different data
+                </button>
+              )}
             </div>
 
             <div className="overflow-x-auto">
@@ -334,7 +366,7 @@ export default function DeepDiagnosisTab({ inputs }) {
               </table>
             </div>
             <p className="mt-2 text-[10px] text-gray-400">
-              All values editable — correct any auto-extracted numbers. DIO and Gross % auto-calculate.
+              All values editable — correct any numbers. DIO and Gross % auto-calculate.
             </p>
           </div>
 
