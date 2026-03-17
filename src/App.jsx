@@ -7,21 +7,10 @@ import { exampleToInputs, EMPTY_INPUTS, getModuleOptions, hasCustomData } from '
 
 import ExampleSelector from './components/ExampleSelector';
 import CompanyCard from './components/CompanyCard';
-import StepCard from './components/StepCard';
-import EffectContent from './components/EffectContent';
-import CauseContent from './components/CauseContent';
-import CompensationContent from './components/CompensationContent';
-import CostContent from './components/CostContent';
-import ModuleConnection from './components/ModuleConnection';
+import ExcessInventorySection from './components/ExcessInventorySection';
+import ValueLeakageSection from './components/ValueLeakageSection';
 import AssumptionsTable from './components/AssumptionsTable';
 import ROISummary from './components/ROISummary';
-
-const STEP_COLORS = {
-  effect: '#3B82F6',
-  cause: '#F59E0B',
-  compensation: '#D97706',
-  cost: '#0D9488',
-};
 
 const TABS = [
   { id: 'diagnostic', label: 'Diagnostic' },
@@ -107,46 +96,20 @@ function App() {
         <div className="max-w-4xl mx-auto px-6 py-6 space-y-4">
           <CompanyCard inputs={inputs} results={results} onInputChange={updateInput} />
 
-          <StepCard step={1} label="Effect" color={STEP_COLORS.effect}>
-            <EffectContent
-              inputs={inputs}
-              results={results}
-              narratives={narratives}
-              onInputChange={updateInput}
-            />
-          </StepCard>
+          <ExcessInventorySection
+            inputs={inputs}
+            results={results}
+            narratives={narratives}
+            benchmarks={benchmarks}
+            onInputChange={updateInput}
+          />
 
-          <StepCard step={2} label="Cause" color={STEP_COLORS.cause}>
-            <CauseContent
-              inputs={inputs}
-              results={results}
-              narratives={narratives}
-              benchmarks={benchmarks}
-              onInputChange={updateInput}
-            />
-          </StepCard>
-
-          <StepCard step={3} label="Compensation" color={STEP_COLORS.compensation}>
-            <CompensationContent
-              inputs={inputs}
-              results={results}
-              narratives={narratives}
-              onInputChange={updateInput}
-            />
-          </StepCard>
-
-          <StepCard step={4} label="Cost" color={STEP_COLORS.cost}>
-            <CostContent
-              inputs={inputs}
-              results={results}
-              onInputChange={updateInput}
-            />
-          </StepCard>
-
-          <ModuleConnection
-            connections={moduleOptions}
-            selectedIndex={inputs.selectedModuleAnswer}
-            onSelect={(idx) => updateInput('selectedModuleAnswer', idx)}
+          <ValueLeakageSection
+            inputs={inputs}
+            results={results}
+            narratives={narratives}
+            moduleOptions={moduleOptions}
+            onInputChange={updateInput}
           />
         </div>
       )}
