@@ -6,35 +6,35 @@ import { formatCr } from '../utils/formatCurrency';
  * Returns enriched years data + trend metrics.
  */
 export function calculateTrends(yearsData, benchmarks) {
-  if (!yearsData || yearsData.length === 0 || !benchmarks) {
+  if (!yearsData || yearsData.length === 0) {
     return emptyTrends();
   }
 
-  const medianDIO = benchmarks.medianDIO.value;
-  const carryingRate = benchmarks.carryingCostRate.value;
-  const writeOffRate = benchmarks.writeOffRate.value;
-  const freightPct = benchmarks.freightPctOfCOGS.value;
-  const expeditedPct = benchmarks.expeditedPctOfFreight.value;
-  const grossMargin = benchmarks.grossMargin.value;
+  const medianDIO = benchmarks?.medianDIO?.value ?? null;
+  const carryingRate = benchmarks?.carryingCostRate?.value ?? null;
+  const writeOffRate = benchmarks?.writeOffRate?.value ?? null;
+  const freightPct = benchmarks?.freightPctOfCOGS?.value ?? null;
+  const expeditedPct = benchmarks?.expeditedPctOfFreight?.value ?? null;
+  const grossMargin = benchmarks?.grossMargin?.value ?? null;
 
   // Enrich each year
   const years = yearsData.map((y) => {
     const revenue = y.revenue;
-    const cogs = y.cogs ?? (revenue != null ? Math.round(revenue * (1 - grossMargin)) : null);
+    const cogs = y.cogs ?? (revenue != null && grossMargin != null ? Math.round(revenue * (1 - grossMargin)) : null);
     const inventory = y.inventory;
 
     const dio = cogs != null && inventory != null && cogs > 0
       ? Math.round((inventory / cogs) * 365)
       : null;
-    const dioGap = dio != null ? Math.max(0, dio - medianDIO) : null;
+    const dioGap = dio != null && medianDIO != null ? Math.max(0, dio - medianDIO) : null;
     const dailyCOGS = cogs != null ? cogs / 365 : null;
     const excessInventory = dioGap != null && dailyCOGS != null
       ? Math.round(dioGap * dailyCOGS)
       : null;
 
-    const carryingCost = excessInventory != null ? Math.round(excessInventory * carryingRate) : null;
-    const writeOffCost = inventory != null ? Math.round(inventory * writeOffRate) : null;
-    const freightCost = cogs != null ? Math.round(cogs * freightPct * expeditedPct) : null;
+    const carryingCost = excessInventory != null && carryingRate != null ? Math.round(excessInventory * carryingRate) : null;
+    const writeOffCost = inventory != null && writeOffRate != null ? Math.round(inventory * writeOffRate) : null;
+    const freightCost = cogs != null && freightPct != null && expeditedPct != null ? Math.round(cogs * freightPct * expeditedPct) : null;
     const totalCost = sum(carryingCost, writeOffCost, freightCost);
     const grossPct = revenue != null && cogs != null && revenue > 0
       ? Math.round(((revenue - cogs) / revenue) * 100)

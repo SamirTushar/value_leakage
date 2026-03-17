@@ -169,7 +169,7 @@ export default function DeepDiagnosisTab({ inputs }) {
               />
               <button
                 onClick={handlePaste}
-                disabled={!pasteText.trim() || !industry}
+                disabled={!pasteText.trim()}
                 className="px-4 py-2 text-sm font-medium text-white bg-teal-600 rounded-lg hover:bg-teal-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
                 Process Data
@@ -339,7 +339,7 @@ export default function DeepDiagnosisTab({ inputs }) {
           </div>
 
           {/* Section 2: Charts */}
-          {benchmarks && (
+          {trendResults.years.length > 0 && (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-6 py-5 space-y-6">
               <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
                 Trend Diagnosis
@@ -348,11 +348,17 @@ export default function DeepDiagnosisTab({ inputs }) {
               <DIOTrendChart data={trendResults.years} medianDIO={trendResults.medianDIO} />
               <GrowthIndexChart data={trendResults.growthIndex} />
               <ExcessBarChart data={trendResults.years} />
+
+              {!benchmarks && (
+                <p className="text-sm text-amber-600">
+                  Select an industry above to see excess inventory calculations and benchmark comparisons.
+                </p>
+              )}
             </div>
           )}
 
           {/* Section 3: Findings */}
-          {benchmarks && (
+          {trendResults.years.length > 0 && (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-6 py-5">
               <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-4">
                 Diagnosis Summary
@@ -361,9 +367,9 @@ export default function DeepDiagnosisTab({ inputs }) {
                 findings={findings}
                 latestYear={trendResults.years.length > 0 ? trendResults.years[trendResults.years.length - 1] : null}
               />
-              {!industry && (
+              {!benchmarks && (
                 <p className="text-sm text-amber-600 mt-3">
-                  Select an industry above to see benchmark comparisons and trend analysis.
+                  Select an industry above to see benchmark comparisons, cost breakdown, and full trend analysis.
                 </p>
               )}
             </div>

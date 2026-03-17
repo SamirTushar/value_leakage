@@ -28,9 +28,11 @@ export function generateFindings(trendResults) {
         text: `DIO has improved from ${firstYear.dio} to ${lastYear.dio} days over ${nYears} years — positive trend.`,
       });
     } else {
-      const position = lastYear.dio > medianDIO ? `${lastYear.dio - medianDIO} days above median` : 'at or below median';
+      const position = medianDIO != null
+        ? (lastYear.dio > medianDIO ? `${lastYear.dio - medianDIO} days above median` : 'at or below median')
+        : `stable`;
       findings.push({
-        type: lastYear.dio > medianDIO ? 'info' : 'positive',
+        type: medianDIO != null && lastYear.dio > medianDIO ? 'info' : 'positive',
         text: `DIO stable at ~${lastYear.dio} days — ${position}.`,
       });
     }
