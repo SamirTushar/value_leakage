@@ -11,9 +11,11 @@ import ExcessInventorySection from './components/ExcessInventorySection';
 import ValueLeakageSection from './components/ValueLeakageSection';
 import AssumptionsTable from './components/AssumptionsTable';
 import ROISummary from './components/ROISummary';
+import DeepDiagnosisTab from './components/DeepDiagnosisTab';
 
 const TABS = [
   { id: 'diagnostic', label: 'Diagnostic' },
+  { id: 'deepDiagnosis', label: 'Deep Diagnosis' },
   { id: 'assumptions', label: 'Assumptions' },
   { id: 'roi', label: 'ROI' },
 ];
@@ -62,11 +64,19 @@ function App() {
           <h1 className="text-base font-semibold text-gray-900 tracking-tight">
             Value Diagnostic
           </h1>
-          <ExampleSelector
-            examples={EXAMPLES}
-            selectedId={selectedId}
-            onSelect={handleSelectExample}
-          />
+          <div className="flex items-center gap-3">
+            <ExampleSelector
+              examples={EXAMPLES}
+              selectedId={selectedId}
+              onSelect={handleSelectExample}
+            />
+            <button
+              onClick={() => alert('PDF export coming soon')}
+              className="px-3 py-1.5 text-xs text-gray-500 border border-gray-300 rounded-lg hover:bg-gray-50 cursor-pointer whitespace-nowrap"
+            >
+              Export PDF
+            </button>
+          </div>
         </div>
       </div>
 
@@ -112,6 +122,10 @@ function App() {
             onInputChange={updateInput}
           />
         </div>
+      )}
+
+      {activeTab === 'deepDiagnosis' && (
+        <DeepDiagnosisTab inputs={inputs} benchmarks={benchmarks} />
       )}
 
       {activeTab === 'assumptions' && (
